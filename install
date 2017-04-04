@@ -1,0 +1,85 @@
+#!/bin/bash
+#
+# Program: CodeDeploy register permissions on AWS
+# Description: Deploy register permissions.
+trap 'stop' SIGUSR1 SIGINT SIGHUP SIGQUIT SIGTERM SIGSTOP
+
+stop() {
+  exit 0
+}
+
+if [ -e config.ini ]; then
+  source config.ini
+else
+  echo "Can not find \'config.ini\'"
+  exit 1
+fi
+
+clear
+echo "Welcome \"codedeploy-permissions\" automatically generate tools"
+echo ""
+echo "Check the installation environment:"
+echo ""
+echo "##################"
+echo "Customize setting"
+echo "##################"
+echo "Project = $ProjectName"
+echo 
+echo ""
+echo "##############"
+echo " AWS setting "
+echo "##############"
+echo "Region = $Region"
+echo "S3 bucket-name = $BucketName"
+echo "IAM User(TravisCI) = $IAMUSER_TRAVIS"
+echo "IAM User(EC2) = $IAMUSER_EC2"
+echo "IAM Group = $IAMGROUP"
+echo "IAM Role(EC2) = $RoleName_EC2"
+echo "IAM Role(CodeDeploy) = $RoleName_CodeDeploy"
+echo "CodeDeploy application = $CodeDeploy_Appname"
+echo "CodeDeploy Deployment Config = $CodeDeploy_Deployment_Config"
+echo -n "CodeDeploy Deployment Group = "
+for (( i = 0; i < ${#CodeDeploy_Deployment_Group[@]}; i++ )); do
+  echo -n "${CodeDeploy_Deployment_Group[i]}, "
+done
+echo 
+echo ""
+read -n1 -r -p "press any key to continue ..."
+
+# get account number
+AccountNumber=$(aws sts get-caller-identity --output text --query 'Account')
+echo "AccountNumber=$AccountNumber" > .acl
+
+if [ -e iamuser-travis ] && [ -e iamrole-ec2 ] && [ -e iamrole-codedeploy ] && [ -e codedeploy ] && [ -e s3bucket ]; then
+  ./s3bucket
+  ./iamuser-travis
+  ./iamrole-codedeploy
+  ./iamrole-ec2
+  ./codedeploy
+else
+  echo "Oops !! lost program ... please contact the system administrator"
+fi
+
+# clean temp file
+if [ -e .acl ]; then
+  rm .acl
+fi
+
+echo ""
+echo "##############################################################"
+
+# generate travisci user access key, limit only one access key.
+echo "Info: generate IAM User \"$IAMUSER_TRAVIS\" access key"
+if aws iam list-access-keys --user-name $IAMUSER_TRAVIS | grep AccessKeyId; then
+  echo "Warning: Limit \"$IAMUSER_TRAVIS\" user can only one access key, please go to IAM user check."
+else
+  aws iam create-access-key --user-name $IAMUSER_TRAVIS
+  if [ $? -eq 0 ]; then
+    echo "Create access key sucessful !!"
+    echo "You can get the \"AccessKeyId\" and \"SecretAccessKey\"(need encrypt) to Travis CI"
+    echo ""
+  else
+    echo "Create access key failed."
+    exit 1
+  fi
+fi

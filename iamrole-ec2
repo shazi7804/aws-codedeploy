@@ -1,0 +1,73 @@
+#!/bin/bash
+#
+# Program: CodeDeploy register on AWS
+# Description: CodeDeploy create Role(IAM) and Bucket(S3) with EC2
+
+RoleTrustfile="trust-policy-ec2.json"
+RolePolciyfile="role-policy.json"
+if [ -e config.ini ]; then
+  source config.ini
+  if [ -e .acl ]; then
+    source .acl
+  else
+    # get account number
+    AccountNumber=$(aws sts get-caller-identity --output text --query 'Account')
+  fi
+else
+  echo "Can not find \'config.ini\'"
+  exit 1
+fi
+
+echo "Info: Create IAM Role \"$RoleName_EC2\"."
+aws iam get-role --role-name $RoleName_EC2 &> /dev/null
+if [ $? -eq 0 ]; then
+  echo "Info: IAM Role \"$RoleName_EC2\" is already exists, skip create ec2 role."
+  exit 1
+fi
+
+tee $RoleTrustfile <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+        "Effect": "Allow",
+        "Principal": {
+            "Service": "ec2.amazonaws.com"
+        },
+        "Action": "sts:AssumeRole"
+        }
+    ]
+}
+EOF
+aws iam create-role --role-name $RoleName_EC2 --assume-role-policy-document file://$RoleTrustfile &>/dev/null
+
+tee $RolePolciyfile <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Stmt1487527978000",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:GetObjectVersion",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::codedeploy-*"
+            ]
+        }
+    ]
+}
+EOF
+aws iam put-role-policy --role-name $RoleName_EC2 --policy-name $RolePolicy_EC2 --policy-document file://$RolePolciyfile
+aws iam create-instance-profile --instance-profile-name $RoleProfileName_EC2
+aws iam add-role-to-instance-profile --role-name $RoleName_EC2 --instance-profile-name $RoleProfileName_EC2
+if [ $? -eq 0 ]; then
+  echo "Info: Create IAM Role \"$RoleName_EC2\" successful."
+else
+  echo "Error: Create IAM Role \"$RoleName_EC2\" failed."
+  exit 1
+fi
+rm $RoleTrustfile $RolePolciyfiloleTrustfile
+
